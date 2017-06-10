@@ -1346,6 +1346,8 @@ inline void commit_translated_routines()
 }
 
 
+//TODO: need to change a function. max_rtn_count = 10
+
 /********************************************************/
 /*************** allocate_and_init_memory ***************/
 /********************************************************/ 
