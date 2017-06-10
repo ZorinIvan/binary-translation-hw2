@@ -1,3 +1,4 @@
+#include "pin.H"
 extern "C" {
 #include "xed-interface.h"
 }
@@ -5,7 +6,6 @@ extern "C" {
 #include <iomanip>
 #include <iostream>
 #include <string.h>
-#include "pin.H"
 #include <map>
 #include <list>
 #include <sys/mman.h>
@@ -43,72 +43,6 @@ KNOB<BOOL>   KnobDoNotCommitTranslatedCode(KNOB_MODE_WRITEONCE,    "pintool",
 
 
 
-/* ======================================= */
-// Global variables
-/* ======================================= */
-
-//for ex2
-ofstream outFile;
-
-instr_table_t *instrTable = NULL; 
-list<RTN_Class*> rtn_list;
-USIZE instrCountTableSize = 0;
-
-//for ex3
-std::ofstream* out = 0;
-
-// For XED:
-#if defined(TARGET_IA32E)
-    xed_state_t dstate = {XED_MACHINE_MODE_LONG_64, XED_ADDRESS_WIDTH_64b};
-#else
-    xed_state_t dstate = { XED_MACHINE_MODE_LEGACY_32, XED_ADDRESS_WIDTH_32b};
-#endif
-
-//For XED: Pass in the proper length: 15 is the max. But if you do not want to
-//cross pages, you can pass less than 15 bytes, of course, the
-//instruction might not decode if not enough bytes are provided.
-const unsigned int max_inst_len = XED_MAX_INSTRUCTION_BYTES;
-
-ADDRINT lowest_sec_addr = 0;
-ADDRINT highest_sec_addr = 0;
-
-#define MAX_PROBE_JUMP_INSTR_BYTES  14
-
-// tc containing the new code:
-char *tc;	
-int tc_cursor = 0;
-
-// instruction map with an entry for each new instruction:
-typedef struct { 
-	ADDRINT orig_ins_addr;
-	ADDRINT new_ins_addr;
-	ADDRINT orig_targ_addr;
-	bool hasNewTargAddr;
-	char encoded_ins[XED_MAX_INSTRUCTION_BYTES];
-	xed_category_enum_t category_enum;
-	unsigned int size;
-	int new_targ_entry;
-} instr_map_t;
-
-
-instr_map_t *instr_map = NULL;
-int num_of_instr_map_entries = 0;
-int max_ins_count = 0;
-
-
-// total number of routines in the main executable module:
-int max_rtn_count = 0;
-
-// Tables of all candidate routines to be translated:
-typedef struct { 
-	ADDRINT rtn_addr; 
-	USIZE rtn_size;
-	int instr_map_entry;   // negative instr_map_entry means routine does not have a translation.
-	bool isSafeForReplacedProbe;	
-} translated_rtn_t;
-
-translated_rtn_t *translated_rtn;
-int translated_rtn_num = 0;
 
 
 /* ======================================= */
@@ -344,6 +278,72 @@ private:
 //============================================
 
 
+/* ======================================= */
+// Global variables
+/* ======================================= */
+
+//for ex2
+ofstream outFile;
+
+instr_table_t *instrTable = NULL; 
+list<RTN_Class*> rtn_list;
+USIZE instrCountTableSize = 0;
+
+//for ex3
+std::ofstream* out = 0;
+
+// For XED:
+#if defined(TARGET_IA32E)
+    xed_state_t dstate = {XED_MACHINE_MODE_LONG_64, XED_ADDRESS_WIDTH_64b};
+#else
+    xed_state_t dstate = { XED_MACHINE_MODE_LEGACY_32, XED_ADDRESS_WIDTH_32b};
+#endif
+
+//For XED: Pass in the proper length: 15 is the max. But if you do not want to
+//cross pages, you can pass less than 15 bytes, of course, the
+//instruction might not decode if not enough bytes are provided.
+const unsigned int max_inst_len = XED_MAX_INSTRUCTION_BYTES;
+
+ADDRINT lowest_sec_addr = 0;
+ADDRINT highest_sec_addr = 0;
+
+#define MAX_PROBE_JUMP_INSTR_BYTES  14
+
+// tc containing the new code:
+char *tc;	
+int tc_cursor = 0;
+
+// instruction map with an entry for each new instruction:
+typedef struct { 
+	ADDRINT orig_ins_addr;
+	ADDRINT new_ins_addr;
+	ADDRINT orig_targ_addr;
+	bool hasNewTargAddr;
+	char encoded_ins[XED_MAX_INSTRUCTION_BYTES];
+	xed_category_enum_t category_enum;
+	unsigned int size;
+	int new_targ_entry;
+} instr_map_t;
+
+
+instr_map_t *instr_map = NULL;
+int num_of_instr_map_entries = 0;
+int max_ins_count = 0;
+
+
+// total number of routines in the main executable module:
+int max_rtn_count = 0;
+
+// Tables of all candidate routines to be translated:
+typedef struct { 
+	ADDRINT rtn_addr; 
+	USIZE rtn_size;
+	int instr_map_entry;   // negative instr_map_entry means routine does not have a translation.
+	bool isSafeForReplacedProbe;	
+} translated_rtn_t;
+
+translated_rtn_t *translated_rtn;
+int translated_rtn_num = 0;
 
 
 /* ======================================= */
@@ -634,7 +634,7 @@ void dump_instr_from_xedd (xed_decoded_inst_t* xedd, ADDRINT address)
 
     xed_uint64_t runtime_address = reinterpret_cast<xed_uint64_t>(address);  // set the runtime adddress for disassembly 
 
-    xed_decoded_inst_dump_intel_format(xedd, disasm_buf, sizeof(disasm_buf), runtime_address);
+   xed_format_context(XED_SYNTAX_INTEL, xedd, disasm_buf, sizeof(disasm_buf), runtime_address, 0, 0);
 
     cerr << hex << address << ": " << disasm_buf <<  endl;
 }
@@ -658,7 +658,8 @@ void dump_instr_from_mem (ADDRINT *address, ADDRINT new_addr)
 	  return;
   }
  
-  xed_decoded_inst_dump_intel_format(&new_xedd, disasm_buf, 2048, new_addr);
+  //xed_decoded_inst_dump_intel_format(&new_xedd, disasm_buf, 2048, new_addr);
+   xed_format_context(XED_SYNTAX_INTEL, &new_xedd, disasm_buf, sizeof(disasm_buf), new_addr, 0, 0);
 
   cerr << "0x" << hex << new_addr << ": " << disasm_buf <<  endl;  
  
@@ -734,7 +735,8 @@ void dump_tc()
 		  return;
 	  }
  
-	  xed_decoded_inst_dump_intel_format(&new_xedd, disasm_buf, 2048, address);
+	 // xed_decoded_inst_dump_intel_format(&new_xedd, disasm_buf, 2048, address);
+      xed_format_context(XED_SYNTAX_INTEL, &new_xedd, disasm_buf, sizeof(disasm_buf), address, 0, 0);
 
 	  cerr << "0x" << hex << address << ": " << disasm_buf <<  endl;
 
@@ -1096,7 +1098,9 @@ int fix_direct_br_call_displacement(int instr_map_entry)
 	if (xed_error != XED_ERROR_NONE) {
 		cerr << "ENCODE ERROR: " << xed_error_enum_t2str(xed_error) <<  endl;
 		char buf[2048];		
-		xed_decoded_inst_dump_intel_format(&xedd, buf, 2048, instr_map[instr_map_entry].orig_ins_addr);
+	//	xed_decoded_inst_dump_intel_format(&xedd, buf, 2048, instr_map[instr_map_entry].orig_ins_addr);
+        xed_format_context(XED_SYNTAX_INTEL, &xedd, buf, 2048, instr_map[instr_map_entry].orig_ins_addr, 0, 0);
+
 	    cerr << " instr: " << "0x" << hex << instr_map[instr_map_entry].orig_ins_addr << " : " << buf <<  endl;
   		return -1;
 	}		
@@ -1186,8 +1190,10 @@ int fix_instructions_displacements()
  }
 
 
+//TODO: need to change following function
+
 /*****************************************/
-/* find_candidate_rtns_for_translation() */
+// find_candidate_rtns_for_translation()  
 /*****************************************/
 int find_candidate_rtns_for_translation(IMG img)
 {
@@ -1537,7 +1543,10 @@ int main(int argc, char * argv[])
          PIN_StartProgramProbed();
         return 0;
     }
-
-	return Usage1();
+    else
+        PIN_StartProgram();
+    
+	  //  return Usage1();
+    return 0;
 }
 
