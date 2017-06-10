@@ -23,6 +23,8 @@ extern "C" {
 #define PROFILE_NAME "__profile.map"
 #define MAX_FINE_NAME_SIZE 30
 
+#define debug(x) (cerr << x << endl )
+
 /*======================================================================*/
 /* commandline switches                                                 */
 /*======================================================================*/
@@ -1515,7 +1517,6 @@ int main(int argc, char * argv[])
 	// Initialize symbol table code, needed for rtn instrumentation
 	PIN_InitSymbols();
 
-
 	// Initialize pin
 	if (PIN_Init(argc, argv))
 	{
@@ -1524,6 +1525,7 @@ int main(int argc, char * argv[])
 	}
 	
 	if(KnobProfile){
+ 
 		// Register Trace to be called to instrument trace
 		TRACE_AddInstrumentFunction(TRACEINFO, 0);
 		// Register Fini to be called when the application exits
