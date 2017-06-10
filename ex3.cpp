@@ -13,9 +13,12 @@
 #define PROFILE_NAME "__profile.map"
 #define MAX_FINE_NAME_SIZE 30
 
+/*======================================================================*/
+/* commandline switches                                                 */
+/*======================================================================*/
 KNOB<BOOL>   KnobProfile(KNOB_MODE_WRITEONCE,    "pintool",
     "prof", "0", "Profiling run");
-KNOB<BOOL>   KnobInstrument(KNOB_MODE_WRITEONCE,    "pintool",
+KNOB<BOOL>   KnobGenerateBinary(KNOB_MODE_WRITEONCE,    "pintool",
     "inst", "0", "Profiling run");
 
 
@@ -529,10 +532,22 @@ int main(int argc, char * argv[])
 		TRACE_AddInstrumentFunction(TRACEINFO, 0);
 		// Register Fini to be called when the application exits
 		PIN_AddFiniFunction(Fini, 0);
+        
+        // Start the program, never returns
+	    PIN_StartProgram();
 	}
+    
+    //run in probe mode and generate the binary code of the top 10 routines
+    else if(KnobGenerateBinary){ 
+        // Register ImageLoad
+	    IMG_AddInstrumentFunction(ImageLoad, 0);
+
+         // Start the program, never returns
+         PIN_StartProgramProbed();
+    }
 	
-	// Start the program, never returns
-	PIN_StartProgram();
+    
+    Usage();
 
 	return 0;
 }
