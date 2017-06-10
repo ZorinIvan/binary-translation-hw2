@@ -18,9 +18,18 @@
 /*======================================================================*/
 KNOB<BOOL>   KnobProfile(KNOB_MODE_WRITEONCE,    "pintool",
     "prof", "0", "Profiling run");
+
 KNOB<BOOL>   KnobGenerateBinary(KNOB_MODE_WRITEONCE,    "pintool",
     "inst", "0", "Profiling run");
 
+KNOB<BOOL>   KnobVerbose(KNOB_MODE_WRITEONCE,    "pintool",
+    "verbose", "0", "Verbose run");
+
+KNOB<BOOL>   KnobDumpTranslatedCode(KNOB_MODE_WRITEONCE,    "pintool",
+    "dump_tc", "0", "Dump Translated Code");
+
+KNOB<BOOL>   KnobDoNotCommitTranslatedCode(KNOB_MODE_WRITEONCE,    "pintool",
+    "no_tc_commit", "0", "Do not commit translated code");
 
 
 using namespace std;
@@ -510,6 +519,77 @@ VOID Fini(INT32 code, VOID *v)
  		outFile.close(); // close "rtn-output.txt"
     
 }
+
+
+/* ============================================ */
+/* Main translation routine                     */
+/* ============================================ */
+VOID ImageLoad(IMG img, VOID *v)
+{
+	// debug print of all images' instructions
+	//dump_all_image_instrs(img);
+
+
+    // Step 0: Check the image and the CPU:
+	if (!IMG_IsMainExecutable(img))
+		return;
+
+	int rc = 0;
+
+	// step 1: Check size of executable sections and allocate required memory:	
+	rc = allocate_and_init_memory(img);
+	if (rc < 0)
+		return;
+
+	cout << "after memory allocation" << endl;
+
+	
+	// Step 2: go over all routines and identify candidate routines and copy their code into the instr map IR:
+	rc = find_candidate_rtns_for_translation(img);
+	if (rc < 0)
+		return;
+
+	cout << "after identifying candidate routines" << endl;	 
+	
+	// Step 3: Chaining - calculate direct branch and call instructions to point to corresponding target instr entries:
+	rc = chain_all_direct_br_and_call_target_entries();
+	if (rc < 0 )
+		return;
+	
+	cout << "after calculate direct br targets" << endl;
+
+	// Step 4: fix rip-based, direct branch and direct call displacements:
+	rc = fix_instructions_displacements();
+	if (rc < 0 )
+		return;
+	
+	cout << "after fix instructions displacements" << endl;
+
+
+	// Step 5: write translated routines to new tc:
+	rc = copy_instrs_to_tc();
+	if (rc < 0 )
+		return;
+
+	cout << "after write all new instructions to memory tc" << endl;
+
+   if (KnobDumpTranslatedCode) {
+	   cerr << "Translation Cache dump:" << endl;
+       dump_tc();  // dump the entire tc
+
+	   cerr << endl << "instructions map dump:" << endl;
+	   dump_entire_instr_map();     // dump all translated instructions in map_instr
+   }
+
+
+	// Step 6: Commit the translated routines:
+	//Go over the candidate functions and replace the original ones by their new successfully translated ones:
+	commit_translated_routines();	
+
+	cout << "after commit translated routines" << endl;
+   
+}
+
 
 /* ===================================================================== */
 /* Print Help Message                                                    */
