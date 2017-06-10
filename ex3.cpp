@@ -286,10 +286,7 @@ bool compareEdge(const Edge_Class* lhs, const Edge_Class* rhs)
 	return (*lhs) < (*rhs);
 }
 
-VOID Usage()
-{
-	cerr << "Please use the pintool with either -prof or -opt knobs" << endl;
-}
+
 
 
 
@@ -514,6 +511,29 @@ VOID Fini(INT32 code, VOID *v)
     
 }
 
+/* ===================================================================== */
+/* Print Help Message                                                    */
+/* ===================================================================== */
+INT32 Usage()
+{
+    cerr << "This tool translated routines of an Intel(R) 64 binary"
+         << endl;
+    cerr << KNOB_BASE::StringKnobSummary();
+    cerr << endl;
+    return -1;
+}
+
+
+INT32 Usage1()
+{
+	cerr << "Please use the pintool with either -prof or -opt knobs" << endl;
+    return -1;
+}
+
+/* ===================================================================== */
+/* Main                                                                  */
+/* ===================================================================== */
+
 int main(int argc, char * argv[])
 {
 	// Initialize symbol table code, needed for rtn instrumentation
@@ -535,6 +555,7 @@ int main(int argc, char * argv[])
         
         // Start the program, never returns
 	    PIN_StartProgram();
+        return 0;
 	}
     
     //run in probe mode and generate the binary code of the top 10 routines
@@ -544,11 +565,9 @@ int main(int argc, char * argv[])
 
          // Start the program, never returns
          PIN_StartProgramProbed();
+        return 0;
     }
-	
-    
-    Usage();
 
-	return 0;
+	return Usage1();
 }
 
