@@ -1,3 +1,6 @@
+extern "C" {
+#include "xed-interface.h"
+}
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -9,6 +12,13 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <malloc.h>
+#include <errno.h>
+#include <assert.h>
+#include <values.h>
 
 #define PROFILE_NAME "__profile.map"
 #define MAX_FINE_NAME_SIZE 30
@@ -32,8 +42,84 @@ KNOB<BOOL>   KnobDoNotCommitTranslatedCode(KNOB_MODE_WRITEONCE,    "pintool",
     "no_tc_commit", "0", "Do not commit translated code");
 
 
-using namespace std;
+
+/* ======================================= */
+// Global variables
+/* ======================================= */
+
+//for ex2
 ofstream outFile;
+
+instr_table_t *instrTable = NULL; 
+list<RTN_Class*> rtn_list;
+USIZE instrCountTableSize = 0;
+
+//for ex3
+std::ofstream* out = 0;
+
+// For XED:
+#if defined(TARGET_IA32E)
+    xed_state_t dstate = {XED_MACHINE_MODE_LONG_64, XED_ADDRESS_WIDTH_64b};
+#else
+    xed_state_t dstate = { XED_MACHINE_MODE_LEGACY_32, XED_ADDRESS_WIDTH_32b};
+#endif
+
+//For XED: Pass in the proper length: 15 is the max. But if you do not want to
+//cross pages, you can pass less than 15 bytes, of course, the
+//instruction might not decode if not enough bytes are provided.
+const unsigned int max_inst_len = XED_MAX_INSTRUCTION_BYTES;
+
+ADDRINT lowest_sec_addr = 0;
+ADDRINT highest_sec_addr = 0;
+
+#define MAX_PROBE_JUMP_INSTR_BYTES  14
+
+// tc containing the new code:
+char *tc;	
+int tc_cursor = 0;
+
+// instruction map with an entry for each new instruction:
+typedef struct { 
+	ADDRINT orig_ins_addr;
+	ADDRINT new_ins_addr;
+	ADDRINT orig_targ_addr;
+	bool hasNewTargAddr;
+	char encoded_ins[XED_MAX_INSTRUCTION_BYTES];
+	xed_category_enum_t category_enum;
+	unsigned int size;
+	int new_targ_entry;
+} instr_map_t;
+
+
+instr_map_t *instr_map = NULL;
+int num_of_instr_map_entries = 0;
+int max_ins_count = 0;
+
+
+// total number of routines in the main executable module:
+int max_rtn_count = 0;
+
+// Tables of all candidate routines to be translated:
+typedef struct { 
+	ADDRINT rtn_addr; 
+	USIZE rtn_size;
+	int instr_map_entry;   // negative instr_map_entry means routine does not have a translation.
+	bool isSafeForReplacedProbe;	
+} translated_rtn_t;
+
+translated_rtn_t *translated_rtn;
+int translated_rtn_num = 0;
+
+
+/* ======================================= */
+// Types and structures
+/* ======================================= */
+typedef struct _instr_table_t {
+    UINT64 count;
+} instr_table_t;
+
+
+using namespace std;
 
 //================ BBL class ===================
 
@@ -258,21 +344,6 @@ private:
 //============================================
 
 
-/* ======================================= */
-// Types and structures
-/* ======================================= */
-typedef struct _instr_table_t {
-    UINT64 count;
-} instr_table_t;
-
-
-/* ======================================= */
-// Global variables
-/* ======================================= */
-
-instr_table_t *instrTable = NULL; 
-list<RTN_Class*> rtn_list;
-USIZE instrCountTableSize = 0;
 
 
 /* ======================================= */
@@ -518,6 +589,79 @@ VOID Fini(INT32 code, VOID *v)
   
  		outFile.close(); // close "rtn-output.txt"
     
+}
+
+
+/********************************************************/
+/*************** allocate_and_init_memory ***************/
+/********************************************************/ 
+int allocate_and_init_memory(IMG img) 
+{
+	// Calculate size of executable sections and allocate required memory:
+	//
+	for (SEC sec = IMG_SecHead(img); SEC_Valid(sec); sec = SEC_Next(sec))
+    {   
+		if (!SEC_IsExecutable(sec) || SEC_IsWriteable(sec) || !SEC_Address(sec))
+			continue;
+
+
+		if (!lowest_sec_addr || lowest_sec_addr > SEC_Address(sec))
+			lowest_sec_addr = SEC_Address(sec);
+
+		if (highest_sec_addr < SEC_Address(sec) + SEC_Size(sec))
+			highest_sec_addr = SEC_Address(sec) + SEC_Size(sec);
+
+		// need to avouid using RTN_Open as it is expensive...
+        for (RTN rtn = SEC_RtnHead(sec); RTN_Valid(rtn); rtn = RTN_Next(rtn))
+        {		
+
+			if (rtn == RTN_Invalid())
+				continue;
+
+			max_ins_count += RTN_NumIns  (rtn);
+			max_rtn_count++;
+		}
+	}
+
+	max_ins_count *= 4; // estimating that the num of instrs of the inlined functions will not exceed the total nunmber of the entire code.
+	
+	// Allocate memory for the instr map needed to fix all branch targets in translated routines:
+	instr_map = (instr_map_t *)calloc(max_ins_count, sizeof(instr_map_t));
+	if (instr_map == NULL) {
+		perror("calloc");
+		return -1;
+	}
+
+
+	// Allocate memory for the array of candidate routines containing inlineable function calls:
+	// Need to estimate size of inlined routines.. ???
+	translated_rtn = (translated_rtn_t *)calloc(max_rtn_count, sizeof(translated_rtn_t));
+	if (translated_rtn == NULL) {
+		perror("calloc");
+		return -1;
+	}
+
+
+	// get a page size in the system:
+	int pagesize = sysconf(_SC_PAGE_SIZE);
+    if (pagesize == -1) {
+      perror("sysconf");
+	  return -1;
+	}
+
+	ADDRINT text_size = (highest_sec_addr - lowest_sec_addr) * 2 + pagesize * 4;
+
+    int tclen = 2 * text_size + pagesize * 4;   // need a better estimate???
+
+	// Allocate the needed tc with RW+EXEC permissions and is not located in an address that is more than 32bits afar:		
+	char * addr = (char *) mmap(NULL, tclen, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
+	if ((ADDRINT) addr == 0xffffffffffffffff) {
+		cerr << "failed to allocate tc" << endl;
+        return -1;
+	}
+	
+	tc = (char *)addr;
+	return 0;
 }
 
 
