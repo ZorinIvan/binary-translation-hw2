@@ -1219,7 +1219,7 @@ int find_candidate_rtns_for_translation(IMG img)
         for (RTN rtn = SEC_RtnHead(sec); RTN_Valid(rtn); rtn = RTN_Next(rtn))
         {	
 
-			if (rtn == RTN_Invalid()) {
+			if (rtn == RTN_Invalid()) {//TODO: check if RTN in top 10
 			  cerr << "Warning: invalid routine " << RTN_Name(rtn) << endl;
   			  continue;
 			}
@@ -1443,11 +1443,6 @@ VOID ImageLoad(IMG img, VOID *v)
 		return;
 
 	int rc = 0;
-	
-	//TESTING RTNS
-	/*for (list<RTN_Class*>::iterator rtn_it = rtn_list.begin(); rtn_it != rtn_list.end(); rtn_it++) {
-		cerr << "We got the rtn list" << endl;
-	}*/
 	
 
 	// step 1: Check size of executable sections and allocate required memory:	
