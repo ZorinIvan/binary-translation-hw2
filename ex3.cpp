@@ -22,6 +22,7 @@ extern "C" {
 
 #define PROFILE_NAME "__profile.map"
 #define MAX_FINE_NAME_SIZE 30
+#define NUMBER_TC_RTNS 10
 
 #define debug(x) (cerr << x << endl )
 
@@ -292,6 +293,8 @@ list<RTN_Class*> rtn_list;
 USIZE instrCountTableSize = 0;
 
 //for ex3
+list<ADDRINT> top10_rtn_addr; //out
+
 std::ofstream* out = 0;
 
 // For XED:
@@ -404,7 +407,8 @@ VOID InitProfile()
     char profileFilename[MAX_FINE_NAME_SIZE];
 
     // profile map should have 1 64-bit integer for each of the counters we save
-    instrCountTableSize = rtn_list.size() + Edge_Class::cnt;
+    instrCountTableSize = (rtn_list.size())*3 + Edge_Class::cnt +1; //For RTNs we save address and count AND number of RTNs
+	//cerr << (void*)instrCountTableSize << endl;
 
     //open the profile file:
     strcpy(profileFilename, "__profile.map");
@@ -421,6 +425,8 @@ VOID InitProfile()
         cerr << "open " << endl;
         exit(1);
     }
+	
+	//write(fd,(void*)instrCountTableSize,sizeof(instrCountTableSize));
 
     /* go to the location corresponding to the last byte */
     if (lseek (fd, (instrCountTableSize * sizeof(instr_table_t)) - 1, SEEK_SET) == -1) {
@@ -535,9 +541,11 @@ VOID Fini(INT32 code, VOID *v)
 	InitProfile();
 
 	int j = 0;
+	instrTable[j++].count = instrCountTableSize;
 	for (list<RTN_Class*>::iterator rtn_it = rtn_list.begin(); rtn_it != rtn_list.end(); rtn_it++) {
 
 		UINT64 count = instrTable[j++].count += *((*rtn_it)->getIcountPtr()) ;
+		instrTable[j++].count = (*rtn_it)->getAddr();
 		//print RTN
 		outFile << (*rtn_it)->getName() << ": " << StringHex((*rtn_it)->getAddr(), 1) \
 			<< " icount: " << count << endl;
@@ -575,7 +583,7 @@ VOID Fini(INT32 code, VOID *v)
 
 		//print Edges
 		std::list<Edge_Class*>::iterator edge_it;
-		
+		instrTable[j++].count = (*rtn_it)->edgelist.size(); //size of the current BBL list
 		
 		for (edge_it = (*rtn_it)->edgelist.begin(); edge_it != (*rtn_it)->edgelist.end(); edge_it++) {
 			UINT64 count = instrTable[j++].count += (*edge_it)->getCount() ;
@@ -1435,6 +1443,12 @@ VOID ImageLoad(IMG img, VOID *v)
 		return;
 
 	int rc = 0;
+	
+	//TESTING RTNS
+	/*for (list<RTN_Class*>::iterator rtn_it = rtn_list.begin(); rtn_it != rtn_list.end(); rtn_it++) {
+		cerr << "We got the rtn list" << endl;
+	}*/
+	
 
 	// step 1: Check size of executable sections and allocate required memory:	
 	rc = allocate_and_init_memory(img);
@@ -1490,6 +1504,52 @@ VOID ImageLoad(IMG img, VOID *v)
    
 }
 
+/* ===================================================================== */
+/* Our ex3 functions	                                                 */
+/* ===================================================================== */
+VOID setTopRtnAddr()
+{
+	int j=0,fd=0;
+	
+	 // open the profile file and map it to memory:
+    fd = open("__profile.map", O_RDONLY);
+    if (fd == -1) {
+        cerr << "no profile file found " << endl;
+        exit(1);
+    }
+	
+	
+	//GET THE TABLE SIZE TO READ IT
+	instrTable = (instr_table_t *)mmap(0, sizeof(instr_table_t), PROT_READ , MAP_SHARED | MAP_FILE , fd, 0);
+    if ((ADDRINT) instrTable == 0xffffffffffffffff) {
+        cerr << "mmap" << endl;
+        exit(1);
+    }
+	UINT64 table_size = instrTable[0].count;
+	
+
+    instrTable = (instr_table_t *)mmap(0, table_size * sizeof(instr_table_t), PROT_READ , MAP_SHARED | MAP_FILE , fd, 0);
+    if ((ADDRINT) instrTable == 0xffffffffffffffff) {
+        cerr << "mmap" << endl;
+        exit(1);
+    }
+	j++;
+	for (int i=0; i<NUMBER_TC_RTNS; i++)
+	{
+		UINT64 rtn_cnt = instrTable[j++].count;
+		UINT64 addr = instrTable[j++].count;
+		UINT64 bbl_list_size = instrTable[j++].count;
+		for (UINT64 i=0; i<bbl_list_size; i++)
+		{
+			j++;
+		}
+		top10_rtn_addr.push_front(addr);
+		cerr << StringHex(addr, 1) << "   And the number is: " << rtn_cnt << endl;
+	}
+	
+	//fd.close();
+}
+
 
 /* ===================================================================== */
 /* Print Help Message                                                    */
@@ -1540,6 +1600,9 @@ int main(int argc, char * argv[])
     
     //run in probe mode and generate the binary code of the top 10 routines
     else if(KnobGenerateBinary){ 
+		//Set RTNs
+		setTopRtnAddr();
+		
         // Register ImageLoad
 	    IMG_AddInstrumentFunction(ImageLoad, 0);
 
