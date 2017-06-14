@@ -372,7 +372,12 @@ bool compareEdge(const Edge_Class* lhs, const Edge_Class* rhs)
 }
 
 
-
+bool isTopTenRTN(RTN rtn){
+    ADDRINT rtnAdd = RTN_Address(rtn);
+    std::list<ADDRINT>::iterator itr = std::find(top10_rtn_addr.begin(), top10_rtn_addr.end(), rtnAdd);
+    if(itr == top10_rtn_addr.end()) return false;
+    return true;
+}
 
 
 /* ======================================= */
@@ -1223,6 +1228,9 @@ int find_candidate_rtns_for_translation(IMG img)
 			  cerr << "Warning: invalid routine " << RTN_Name(rtn) << endl;
   			  continue;
 			}
+            if (!isTopTenRTN(rtn)){
+                continue;
+            }
 
 			translated_rtn[translated_rtn_num].rtn_addr = RTN_Address(rtn);			
 			translated_rtn[translated_rtn_num].rtn_size = RTN_Size(rtn);
@@ -1436,7 +1444,6 @@ VOID ImageLoad(IMG img, VOID *v)
 {
 	// debug print of all images' instructions
 	//dump_all_image_instrs(img);
-
 
     // Step 0: Check the image and the CPU:
 	if (!IMG_IsMainExecutable(img))
