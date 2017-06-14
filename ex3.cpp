@@ -1538,7 +1538,7 @@ VOID setTopRtnAddr()
 	j++;
 	for (int i=0; i<NUMBER_TC_RTNS; i++)
 	{
-		UINT64 rtn_cnt = instrTable[j++].count;
+		/*UINT64 rtn_cnt = */ instrTable[j++].count;
 		UINT64 addr = instrTable[j++].count;
 		UINT64 bbl_list_size = instrTable[j++].count;
 		for (UINT64 i=0; i<bbl_list_size; i++)
@@ -1546,7 +1546,7 @@ VOID setTopRtnAddr()
 			j++;
 		}
 		top10_rtn_addr.push_front(addr);
-		cerr << StringHex(addr, 1) << "   And the number is: " << rtn_cnt << endl;
+		//cerr << StringHex(addr, 1) << "   And the number is: " << rtn_cnt << endl;
 	}
 	
 	//fd.close();
